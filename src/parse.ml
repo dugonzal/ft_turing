@@ -63,15 +63,29 @@ let parse_transition (states: Type.state list) (alphabet: Type.symbol list) (t: 
 
     3. Then, it calls an inner fold_left to add the content of each state to the "transitions" map. 
        It works in the same way, but iterates over each inner transition (the content of each state_name)
+
+    Dos cosas se rechazan aqui, y no se dejan para que las resuelva el mapa: un estado
+    que aparece como clave y no esta declarado en "states", y una segunda regla para el
+    mismo par (estado, simbolo). El motor es determinista, asi que un StateMap al que
+    se le solapan claves solo haria que ganase la ultima en silencio.
 *)
 let parse_transitions (states: Type.state list) (alphabet: Type.symbol list) (json: Yojson.Basic.t): Type.transition Type.StateMap.t =
   json |> member Constant.transitions |> to_assoc
   |> List.fold_left
        (fun map (state_name, transitions_json) ->
+          if not (List.mem state_name states) then
+            failwith
+              (Printf.sprintf "[transitions] %s %s" state_name
+                 Constant.undeclared_transition_state);
           transitions_json |> to_list |> List.map (parse_transition states alphabet)
           |> List.fold_left
                (fun map (t : Type.transition) ->
-                  Type.StateMap.add (state_name, t.read) t map)
+                  let key = (state_name, t.read) in
+                  if Type.StateMap.mem key map then
+                    failwith
+                      (Printf.sprintf "[transitions] (%s, %c) %s" state_name
+                         t.read Constant.duplicated_transition);
+                  Type.StateMap.add key t map)
                map)
        Type.StateMap.empty
 
@@ -84,6 +98,13 @@ let rec check_list_dups (lst: Yojson.Basic.t list) =
   match lst with
   | [] | [_] -> false
   | x :: rest -> List.mem x rest || check_list_dups rest
+
+(* Un objeto es una regla, no un simbolo: dos reglas identicas en campos son dos
+   reglas legitimas (mismo comportamiento, distinto par leido), y el motor las
+   distingue por la posicion. Repetir un simbolo, en cambio, si es un error, y
+   para eso esta la comparacion estructural. *)
+let has_object (lst: Yojson.Basic.t list) =
+  List.exists (fun item -> match item with `Assoc _ | `List _ -> true | _ -> false) lst
 
 (* I made this function recursive for it to check elements inside JSON objects aswell *)
 let rec check_duplicate_keys (json: Yojson.Basic.t): unit =
@@ -100,7 +121,7 @@ let rec check_duplicate_keys (json: Yojson.Basic.t): unit =
     with Type_error _ -> ());
   (try
       let items = to_list json in
-      if check_list_dups items then
+      if (not (has_object items)) && check_list_dups items then
         failwith ("duplicate elements in list");
       List.iter check_duplicate_keys items
     with Type_error _ -> ())

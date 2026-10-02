@@ -33,7 +33,7 @@ let window ?(width = 20) tape =
   "[" ^ String.concat "" (List.mapi mark (cells @ padding)) ^ "]"
 
 let banner_width = 80
-let box_width = 70
+let box_width = banner_width - 2
 let stars = String.make banner_width '*'
 
 let centered width text =
@@ -108,3 +108,26 @@ let print_outcome (status : Executor.status) (final : Executor.configuration) =
       Printf.printf
         "timed out: the machine did not halt within its step budget\n"
   | Executor.Accepted -> ()
+
+let print_table (rows: (int * int * Executor.status * float option) list): unit =
+  Printf.printf "%-8s %-10s %-10s %s\n" "n" "steps" "status" "k";
+  List.iter
+    (fun (n, steps, status, k) ->
+      let k_text =
+        match status, k with
+        | Executor.Accepted, Some k -> Printf.sprintf "%.2f" k
+        | Executor.Accepted, None -> "-"
+        | _ -> "excluded"
+      in
+      Printf.printf "%-8d %-10d %-10s %s\n" n steps (status_to_string status) k_text)
+    rows
+
+let print_complexity (rows: (int * int * Executor.status * float option) list): unit =
+  let last_k = List.fold_left (fun last (_, _, _, k) -> match k with Some _ -> k | None -> last) None rows in
+  match last_k with
+    | None -> print_string "complexity: not enough accepted inputs\n"
+    | Some k ->
+      (match Float.to_int (Float.round k) with
+       | 0 -> print_string "complexity: O(1)\n"
+       | 1 -> print_string "complexity: O(n)\n"
+       | d -> Printf.printf "complexity: O(n^%d)\n" d)

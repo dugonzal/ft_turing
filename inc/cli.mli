@@ -4,6 +4,7 @@
 type action =
   | Help
   | Run of { description : string; input : string }
+  | Complexity of { description: string; inputs: string list }
 
 val action_of_arguments : string list -> (action, string) result
 
